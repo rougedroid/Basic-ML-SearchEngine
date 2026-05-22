@@ -173,13 +173,13 @@ ONLY OUTPUT THE RAW JSON FORMAT. DO NOT INCLUDE ANY EXPLANATION OR ADDITIONAL TE
         #print("Predicted next node id:", pred_id)
         
 def test():
-    seed = {'intent': 'question', 'keyword': 'renewable energy', 'context': 'sustainability', 'additional_info': 'environmental impact', 'phrase': 'how does this affect our future', 'mood': 'curious', 'correction': 'false', 'correct_node_id': '1440728'}
+    seed = {'intent': 'question', 'keyword': 'space', 'context': 'travel', 'additional_info': 'timeline', 'phrase': 'how does this affect our future', 'mood': 'curious', 'correction': 'false', 'correct_node_id': 'NULL'}
     print(nodepointer.next_node_predictor(seed, connections.answer_node_model_path))
 
     # we need richness in training data, rn gemini is teaching only quantum, or renewable energy, we need it to explore a large range of topics so the model learns the patterns of relations not the node patterns. 
 
 if __name__ == "__main__":
-    main()
+    #main()
     test()
 
 
