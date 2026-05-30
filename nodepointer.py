@@ -45,6 +45,7 @@ from river import facto
 from river import tree
 import connections
 from river import feature_extraction
+from river import linear_model
 from river import multioutput
 from river import preprocessing
 from river import compose
@@ -119,7 +120,7 @@ def init_model(path):
         print("Given Path:", path  )
 
         
-        model = (compose.FuncTransformer(preprocess_features) | facto.FMClassifier())  # Initialize an empty model if loading fails
+        model = (compose.FuncTransformer(preprocess_features) |facto.FMClassifier())  # Initialize an empty model if loading fails
 
     return model
 
@@ -130,14 +131,51 @@ def search_nodes(keyword):
             "MATCH (n) WHERE n.name CONTAINS $keyword RETURN n",
             keyword=keyword
         )
-        nodes = [record["n"] for record in result]
+        result = session.run(
+            """
+// 1. Search the full-text index for your keywords
+
+CALL db.index.fulltext.queryNodes("nodeTextIndex", $searchKeyword) 
+
+YIELD node, score AS textScore
+
+
+// 2. Filter or ensure the GDS topology score parameter exists
+
+WHERE node.topologyScore IS NOT NULL
+
+
+// 3. Calculate a combined composite score 
+
+// (Multiplying prevents low-text-matching nodes with massive topology scores from hijacking the results)
+
+WITH node, textScore, (textScore * node.topologyScore) AS compositeScore
+
+
+// 4. Sort by the highest composite score and limit to N results
+
+ORDER BY compositeScore DESC
+
+LIMIT 15
+
+
+// 5. Return the top nodes and metrics
+
+RETURN node
+
+
+
+""", searchKeyword=keyword
+        )
+        print(result)
+        nodes = [record["node"] for record in result]
     return nodes
 
 def neighbour_nodes(node_id):
     # This function will return the neighboring nodes of a given node_id
     with connections.driver.session(database='cskg') as session:
         result = session.run(
-            "MATCH (n)-[]->(m) WHERE n.id = $node_id RETURN m",
+            "MATCH (n)-[]->(m) WHERE elementId(n) = $node_id RETURN m",
             node_id=node_id
         )
         neighbors = [record["m"]["name"] for record in result]
@@ -161,6 +199,7 @@ def predict_next_node(input_dict, model):
 
     keyword = input_dict["keyword"]
     candidate_nodes = search_nodes(keyword)
+    print("Retreived Nodes:", len(candidate_nodes))
     predictions = []
     print("Candidate Nodes:", [candidate.id for candidate in candidate_nodes])
     for candidate in candidate_nodes:
@@ -176,6 +215,7 @@ def predict_next_node(input_dict, model):
             **dict(candidate),
             #"candidate_id": candidate.id
         }
+        
         prediction = model.predict_proba_one(x)  # Predict the next node based on the input and candidate properties
         predictions.append((candidate.id, prediction[1.0]))  # Store the prediction for each candidate node
         print("Candidate Node ID:", candidate.id, "Prediction:", prediction)
@@ -201,6 +241,8 @@ def train_model(input_dict, correct_node_id, model):
             **dict(candidate),
             #"candidate_id": candidate.id
         }
+        #print(x)
+
         print("Training on candidate node ID:", candidate.id)
         y = 1.0 if candidate.id == int(correct_node_id) else 0.0  # Label the correct node as 1 and others as 0
         model.learn_one(x, y)  # Train the model incrementally with the new data

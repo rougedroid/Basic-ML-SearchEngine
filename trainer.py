@@ -13,6 +13,7 @@ from river import preprocessing
 from google import genai
 import nodepointer
 import time
+import random
 
 
 bow = feature_extraction.BagOfWords()
@@ -37,6 +38,10 @@ def init_model(path):
 """
 
 
+
+
+
+
 def search_nodes(keyword):
     # This function will search for nodes in the Neo4j database that match the keyword
     with connections.driver.session(database='cskg') as session:
@@ -51,7 +56,7 @@ def neighbour_nodes(node_id):
     # This function will return the neighboring nodes of a given node_id
     with connections.driver.session(database='cskg') as session:
         result = session.run(
-            "MATCH (n)-[]->(m) WHERE n.id = $node_id RETURN m",
+            "MATCH (n)-[]->(m) WHERE elementId(n) = $node_id RETURN m",
             node_id=node_id
         )
         neighbors = [record["m"]["name"] for record in result]
@@ -113,6 +118,7 @@ def main():
     "mood": "curious"
 }   
 
+Give one question from the field specified in example. The output should be a JSON object that includes the input and the expected next node id. The next node id should be a string that represents the unique identifier of the next node in the reasoning process. Make sure to provide a variety of examples to help the model learn effectively.
 here, the intent is fixed as "question", but the rest of the fields can vary. for the phrase field, include actual question by user without keyword and additional info to train model on general english phrases. The mood field can be "curious", "neutral", or "negative".
 
 ONLY OUTPUT THE RAW JSON FORMAT. DO NOT INCLUDE ANY EXPLANATION OR ADDITIONAL TEXT OR JSON CODE BLOCK FORMATTING. THE PROVIDED JSON IS THE FINAL OUTPUT FORMAT. YOUR OUTPUS SHOULD START WITH { and END WITH } AND DIRECTLY GET INTO THE REQUIRED FIELDS. DO NOT SAY "the output is" or "the json is" or anything like that. JUST OUTPUT THE RAW JSON.
@@ -123,7 +129,9 @@ ONLY OUTPUT THE RAW JSON FORMAT. DO NOT INCLUDE ANY EXPLANATION OR ADDITIONAL TE
         print("Iteration:", i+1)
 
         time.sleep(5)  # Add a delay to avoid hitting rate limits or overwhelming the model with requests
-        
+        fields = ["quantum computing", "renewable energy", "artificial intelligence", "climate change", "genetic engineering", "space exploration", "ancient history", "modern art", "philosophy", "psychology", "economics", "sociology", "linguistics", "medicine", "nanotechnology", "cybersecurity", "virtual reality", "augmented reality", "blockchain technology", "cryptocurrency", "general knowledge", "current events", "sports", "entertainment", "music", "literature", "politics", "education", "health and wellness", "travel", "food and cuisine", "biology", "chemistry", "physics", "mathematics"]
+        k = random.choice(fields)
+        seeder_prompt = seeder_prompt.replace("quantum computing", k)
         response = client.models.generate_content(
             model=gem_model,
             contents=seeder_prompt
@@ -139,7 +147,8 @@ ONLY OUTPUT THE RAW JSON FORMAT. DO NOT INCLUDE ANY EXPLANATION OR ADDITIONAL TE
         "mood": "curious"
     },
     "next_node_id": "node_742"
-}
+}       
+        print(response.text)
         seed = json.loads(response.text)["input"]
         #seed = response_dict["input"]
         seed["correction"] = "false"
@@ -169,18 +178,45 @@ ONLY OUTPUT THE RAW JSON FORMAT. DO NOT INCLUDE ANY EXPLANATION OR ADDITIONAL TE
         train_input["correction"] = "true"
         train_input["correct_node_id"] = response.text
         print("Training model with input:", train_input)
+        with open('training_data.csv', 'a') as file:
+            file.write(f"{train_input['intent']},{train_input['keyword']},{train_input['context']},{train_input['additional_info']},{train_input['phrase']},{train_input['mood']},{train_input['correction']},{train_input['correct_node_id']}\n")
+
         pred_id = nodepointer.next_node_predictor(train_input, connections.answer_node_model_path)
         #print("Predicted next node id:", pred_id)
         
+def train_past():
+    # This function can be used to train the model on past data from the CSV file
+    
+    with open('training_data.csv', 'r') as file:
+        next(file)  # Skip header line
+        for line in file:
+            intent, keyword, context, additional_info, phrase, mood, correction, correct_node_id = line.strip().split(',')
+            input_dict = {
+                "intent": intent,
+                "keyword": keyword,
+                "context": context,
+                "additional_info": additional_info,
+                "phrase": phrase,
+                "mood": mood,
+                "correction": correction,
+                "correct_node_id": correct_node_id
+            }
+            nodepointer.next_node_predictor(input_dict, connections.answer_node_model_path)  # This will train the model with the past data
+                
+    
+
 def test():
-    seed = {'intent': 'question', 'keyword': 'space', 'context': 'travel', 'additional_info': 'timeline', 'phrase': 'how does this affect our future', 'mood': 'curious', 'correction': 'false', 'correct_node_id': 'NULL'}
+    seed = {'intent': 'question', 'keyword': 'money', 'context': 'currency', 'additional_info': 'what', 'phrase': 'what does it do', 'mood': 'curious', 'correction': 'false', 'correct_node_id': 'NULL'}
     print(nodepointer.next_node_predictor(seed, connections.answer_node_model_path))
 
     # we need richness in training data, rn gemini is teaching only quantum, or renewable energy, we need it to explore a large range of topics so the model learns the patterns of relations not the node patterns. 
 
 if __name__ == "__main__":
     #main()
+    train_past()
     test()
+    
+    
 
 
 
